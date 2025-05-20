@@ -34,8 +34,8 @@ module "kube-hetzner" {
     },
   ]
 
-  load_balancer_type     = null
-  load_balancer_location = null
+  load_balancer_type     = "lb11"
+  load_balancer_location = "nbg1"
 
   enable_longhorn     = false
   disable_hetzner_csi = false
