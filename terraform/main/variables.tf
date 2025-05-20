@@ -22,8 +22,8 @@ variable "hcloud_ssh_key_id" {
   sensitive   = true
 }
 
-variable "firewall_ssh_source_ip" {
-  description = "IP address allowed to access SSH"
-  type        = string
-  sensitive   = true
-}
+# variable "firewall_ssh_source_ip" {
+#   description = "IP address allowed to access SSH"
+#   type        = string
+#   sensitive   = true
+# }
