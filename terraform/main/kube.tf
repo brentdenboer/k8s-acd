@@ -33,8 +33,13 @@ module "kube-hetzner" {
     },
   ]
 
-  load_balancer_type     = "lb11"
-  load_balancer_location = "nbg1"
+  load_balancer_type     = null
+  load_balancer_location = null
+
+  enable_longhorn     = false
+  disable_hetzner_csi = false
+
+  ingress_controller = "none"
 
   hetzner_ccm_use_helm = true
   enable_klipper_metal_lb = "true"
@@ -46,7 +51,6 @@ module "kube-hetzner" {
   initial_k3s_channel = "v1.32"
 
   cluster_name = "k8s-acd-main"
-  use_cluster_name_in_node_name = false
 
   firewall_kube_api_source = null
   firewall_ssh_source = [var.firewall_ssh_source_ip]
@@ -62,6 +66,8 @@ module "kube-hetzner" {
     }
   ]
 
+  cni_plugin = "cilium"
+
   dns_servers = [
     "1.1.1.1",
     "8.8.8.8",
@@ -69,7 +75,7 @@ module "kube-hetzner" {
   ]
 
   create_kubeconfig = false
-  export_values = true
+  export_values = false
 }
 
 provider "hcloud" {
