@@ -49,7 +49,7 @@ module "kube-hetzner" {
   use_cluster_name_in_node_name = false
 
   firewall_kube_api_source = null
-  firewall_ssh_source = ["IP_ADDRESS/32"]
+  firewall_ssh_source = [var.firewall_ssh_source_ip]
 
   extra_firewall_rules = [
     {
@@ -89,9 +89,4 @@ terraform {
 output "kubeconfig" {
   value     = module.kube-hetzner.kubeconfig
   sensitive = true
-}
-
-variable "hcloud_token" {
-  sensitive = true
-  default   = ""
 }
