@@ -1,0 +1,97 @@
+module "kube-hetzner" {
+  providers = {
+    hcloud = hcloud
+  }
+  hcloud_token = var.hcloud_token
+
+  source = "kube-hetzner/kube-hetzner/hcloud"
+
+  ssh_public_key = var.ssh_public_key
+  ssh_private_key = var.ssh_private_key
+
+  network_region = "eu-central"
+
+  control_plane_nodepools = [
+    {
+      name        = "cp",
+      server_type = "cax11",
+      location    = "nbg1",
+      labels      = [],
+      taints      = [],
+      count       = 1
+    },
+  ]
+
+  agent_nodepools = [
+    {
+      name        = "agent",
+      server_type = "cax11",
+      location    = "nbg1",
+      labels      = [],
+      taints      = [],
+      count       = 1
+    },
+  ]
+
+  load_balancer_type     = "lb11"
+  load_balancer_location = "nbg1"
+
+  hetzner_ccm_use_helm = true
+  enable_klipper_metal_lb = "true"
+  automatically_upgrade_k3s = false
+  system_upgrade_use_drain = true
+  system_upgrade_enable_eviction = false
+  automatically_upgrade_os = false
+
+  initial_k3s_channel = "v1.32"
+
+  cluster_name = "k8s-acd-main"
+  use_cluster_name_in_node_name = false
+
+  firewall_kube_api_source = null
+  firewall_ssh_source = ["IP_ADDRESS/32"]
+
+  extra_firewall_rules = [
+    {
+      description = "To Allow ArgoCD access to resources via SSH"
+      direction       = "out"
+      protocol        = "tcp"
+      port            = "22"
+      source_ips      = []
+      destination_ips = ["0.0.0.0/0", "::/0"]
+    }
+  ]
+
+  dns_servers = [
+    "1.1.1.1",
+    "8.8.8.8",
+    "2606:4700:4700::1111",
+  ]
+
+  create_kubeconfig = false
+  export_values = true
+}
+
+provider "hcloud" {
+  token = var.hcloud_token
+}
+
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = ">= 1.49.1"
+    }
+  }
+}
+
+output "kubeconfig" {
+  value     = module.kube-hetzner.kubeconfig
+  sensitive = true
+}
+
+variable "hcloud_token" {
+  sensitive = true
+  default   = ""
+}
