@@ -10,6 +10,8 @@ module "kube-hetzner" {
   ssh_private_key = var.ssh_private_key
   hcloud_ssh_key_id = var.hcloud_ssh_key_id
 
+  ssh_additional_public_keys = var.ssh_additional_public_keys
+
   network_region = "eu-central"
 
   control_plane_nodepools = [

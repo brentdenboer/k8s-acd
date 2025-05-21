@@ -22,6 +22,12 @@ variable "hcloud_ssh_key_id" {
   sensitive   = true
 }
 
+variable "ssh_additional_public_keys" {
+  description = "Additional SSH public keys (comma separated)"
+  type        = list(string)
+  sensitive   = true
+}
+
 # variable "firewall_ssh_source_ip" {
 #   description = "IP address allowed to access SSH"
 #   type        = string
