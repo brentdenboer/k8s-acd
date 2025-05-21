@@ -25,6 +25,7 @@ variable "hcloud_ssh_key_id" {
 variable "ssh_additional_public_keys" {
   description = "Additional SSH public keys (comma separated)"
   type        = string
+  default     = ""
   sensitive   = true
 }
 

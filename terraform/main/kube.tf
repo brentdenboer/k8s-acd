@@ -6,8 +6,8 @@ module "kube-hetzner" {
 
   source = "kube-hetzner/kube-hetzner/hcloud"
 
-  ssh_public_key = var.ssh_public_key
-  ssh_private_key = var.ssh_private_key
+  ssh_public_key    = var.ssh_public_key
+  ssh_private_key   = var.ssh_private_key
   hcloud_ssh_key_id = var.hcloud_ssh_key_id
 
   ssh_additional_public_keys = [var.ssh_additional_public_keys]
@@ -44,12 +44,12 @@ module "kube-hetzner" {
 
   ingress_controller = "none"
 
-  hetzner_ccm_use_helm = true
-  enable_klipper_metal_lb = "true"
-  automatically_upgrade_k3s = false
-  system_upgrade_use_drain = true
+  hetzner_ccm_use_helm           = true
+  enable_klipper_metal_lb        = "true"
+  automatically_upgrade_k3s      = false
+  system_upgrade_use_drain       = true
   system_upgrade_enable_eviction = false
-  automatically_upgrade_os = false
+  automatically_upgrade_os       = false
 
   initial_k3s_channel = "v1.32"
 
@@ -60,7 +60,7 @@ module "kube-hetzner" {
 
   extra_firewall_rules = [
     {
-      description = "To Allow ArgoCD access to resources via SSH"
+      description     = "To Allow ArgoCD access to resources via SSH"
       direction       = "out"
       protocol        = "tcp"
       port            = "22"
@@ -78,7 +78,7 @@ module "kube-hetzner" {
   ]
 
   create_kubeconfig = false
-  export_values = false
+  export_values     = false
 }
 
 provider "hcloud" {
