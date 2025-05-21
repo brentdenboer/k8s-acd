@@ -91,6 +91,14 @@ terraform {
       version = ">= 1.49.1"
     }
   }
+
+  cloud {
+    organization = "brentdenboer"
+
+    workspaces {
+      name = "k8s-acd"
+    }
+  }
 }
 
 output "kubeconfig" {

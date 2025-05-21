@@ -38,6 +38,7 @@ jobs:
       TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       TF_VAR_hcloud_ssh_key_id: ${{ secrets.HCLOUD_SSH_KEY_ID }}
       # TF_VAR_firewall_ssh_source_ip: ${{ secrets.FIREWALL_SSH_SOURCE_IP }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
       - name: Checkout code
