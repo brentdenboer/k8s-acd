@@ -38,6 +38,8 @@ jobs:
       TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       TF_VAR_hcloud_ssh_key_id: ${{ secrets.HCLOUD_SSH_KEY_ID }}
       # TF_VAR_firewall_ssh_source_ip: ${{ secrets.FIREWALL_SSH_SOURCE_IP }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
 
     steps:
       - name: Checkout code

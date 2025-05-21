@@ -91,6 +91,17 @@ terraform {
       version = ">= 1.49.1"
     }
   }
+
+  backend "s3" {
+    bucket                      = "k8s-acd"
+    key                         = "k8s-acd-main.tfstate"
+    region                      = "nbg1"
+    endpoint                    = "nbg1.your-objectstorage.com"
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_metadata_api_check     = true
+    force_path_style            = true
+  }
 }
 
 output "kubeconfig" {
