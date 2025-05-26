@@ -39,24 +39,15 @@ module "kube-hetzner" {
   load_balancer_type     = "lb11"
   load_balancer_location = "nbg1"
 
-  enable_longhorn     = false
-  disable_hetzner_csi = false
-
-  ingress_controller = "none"
-
   hetzner_ccm_use_helm           = true
-  enable_klipper_metal_lb        = "true"
   automatically_upgrade_k3s      = false
   system_upgrade_use_drain       = true
   system_upgrade_enable_eviction = false
   automatically_upgrade_os       = false
 
-  initial_k3s_channel = "v1.32"
-
   cluster_name = "k8s-acd-main"
 
   firewall_kube_api_source = null
-  # firewall_ssh_source = [var.firewall_ssh_source_ip]
 
   extra_firewall_rules = [
     {
@@ -69,7 +60,7 @@ module "kube-hetzner" {
     }
   ]
 
-  cni_plugin = "cilium"
+  enable_cert_manager = true
 
   dns_servers = [
     "1.1.1.1",
