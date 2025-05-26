@@ -1,0 +1,97 @@
+name: Terraform Template
+
+on:
+  workflow_call:
+    inputs:
+      cluster:
+        description: 'Cluster name'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action (apply or destroy)'
+        required: true
+        type: string
+      confirm_destroy:
+        description: 'Destroy confirmation (required for destroy action)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }} - ${{ inputs.cluster }}
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      TF_VAR_hcloud_ssh_key_id: ${{ secrets.HCLOUD_SSH_KEY_ID }}
+      TF_VAR_ssh_additional_public_keys: ${{ secrets.SSH_ADDITIONAL_PUBLIC_KEYS }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+    steps:
+      - name: Validate Destroy Confirmation
+        if: inputs.action == 'destroy'
+        run: |
+          if [ "${{ inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "❌ Destroy confirmation failed. You must type 'DESTROY' exactly to proceed."
+            exit 1
+          fi
+          echo "✅ Destroy confirmation validated"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        if: inputs.action == 'apply'
+        id: fmt
+        run: terraform fmt -check -recursive
+        working-directory: terraform/${{ inputs.cluster }}
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init --upgrade
+        working-directory: terraform/${{ inputs.cluster }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: terraform/${{ inputs.cluster }}
+
+      - name: Terraform Plan
+        if: inputs.action == 'apply'
+        id: plan
+        run: terraform plan -no-color
+        working-directory: terraform/${{ inputs.cluster }}
+        continue-on-error: true
+
+      - name: Terraform Plan Destroy
+        if: inputs.action == 'destroy'
+        id: plan-destroy
+        run: terraform plan -destroy -no-color
+        working-directory: terraform/${{ inputs.cluster }}
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: (inputs.action == 'apply' && steps.plan.outcome == 'failure') || (inputs.action == 'destroy' && steps.plan-destroy.outcome == 'failure')
+        run: exit 1
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        id: apply
+        run: terraform apply -auto-approve
+        working-directory: terraform/${{ inputs.cluster }}
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        id: destroy
+        run: terraform destroy -auto-approve
+        working-directory: terraform/${{ inputs.cluster }}
