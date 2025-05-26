@@ -1,0 +1,17 @@
+name: Terraform Apply - Main Cluster
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/main/**'
+  workflow_dispatch:
+
+jobs:
+  terraform-apply:
+    uses: ./.github/workflows/terraform-template.yml
+    with:
+      cluster: main
+      action: apply
+    secrets: inherit
