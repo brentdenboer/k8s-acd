@@ -29,8 +29,9 @@ variable "ssh_additional_public_keys" {
   sensitive   = true
 }
 
-# variable "firewall_ssh_source_ip" {
-#   description = "IP address allowed to access SSH"
-#   type        = string
-#   sensitive   = true
-# }
+variable "ssh_port" {
+  description = "SSH port to use for the cluster"
+  type        = number
+  default     = 22
+  sensitive   = true
+}
