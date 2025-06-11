@@ -45,7 +45,7 @@ module "kube-hetzner" {
 
   cluster_name = "k8s-acd-main"
 
-  firewall_kube_api_source = null
+  # firewall_kube_api_source = null
 
   extra_firewall_rules = [
     {
