@@ -1,23 +1,24 @@
 apiVersion: networking.k8s.io/v1
-kind: Ingress
+kind: IngressRoute
 metadata:
   name: argocd-server
   namespace: argocd
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
-  rules:
-    - host: "argocd.brentdb.nl"
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
-                port:
-                  number: 80
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`argocd.brentdb.nl`)
+      priority: 10
+      services:
+        - name: argocd-server
+          port: 80
+    - kind: Rule
+      match: Host(`argocd.brentdb.nl`) && Header(`Content-Type`, `application/grpc`)
+      priority: 11
+      services:
+        - name: argocd-server
+          port: 80
+          scheme: h2c
   tls:
-    - hosts:
-      - "argocd.brentdb.nl"
-      secretName: argocd-letsencrypt-tls
+    secretName: argocd-letsencrypt-tls
