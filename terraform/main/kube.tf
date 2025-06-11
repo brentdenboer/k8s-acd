@@ -68,6 +68,15 @@ module "kube-hetzner" {
 
   create_kubeconfig = false
   export_values     = false
+
+  extra_kustomize_deployment_commands = <<-EOT
+    echo "Waiting for ArgoCD CRDs to be established..."
+    kubectl -n argocd wait --for condition=established --timeout=180s crd/applications.argoproj.io
+    kubectl -n argocd wait --for condition=established --timeout=180s crd/appprojects.argoproj.io
+    echo "ArgoCD CRDs are ready. Applying initial AppProject and App-of-Apps..."
+    kubectl apply -f /var/user_kustomize/1-argocd-project.yaml
+    kubectl apply -f /var/user_kustomize/2-argocd-app-of-apps.yaml
+  EOT
 }
 
 provider "hcloud" {
