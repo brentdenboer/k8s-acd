@@ -4,18 +4,18 @@ on:
   workflow_call:
     inputs:
       cluster:
-        description: 'Cluster name'
+        description: "Cluster name"
         required: true
         type: string
       action:
-        description: 'Terraform action (apply or destroy)'
+        description: "Terraform action (apply or destroy)"
         required: true
         type: string
       confirm_destroy:
-        description: 'Destroy confirmation (required for destroy action)'
+        description: "Destroy confirmation (required for destroy action)"
         required: false
         type: string
-        default: ''
+        default: ""
 
 permissions:
   contents: read
