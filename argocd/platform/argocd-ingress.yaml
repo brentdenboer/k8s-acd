@@ -1,26 +1,23 @@
 apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+kind: Ingress
 metadata:
   name: argocd-server
   namespace: argocd
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - kind: Rule
-      match: Host(`argocd.brentdb.nl`)
-      priority: 10
-      services:
-        - name: argocd-server
-          port: 80
-    - kind: Rule
-      match: Host(`argocd.brentdb.nl`) && Header(`Content-Type`, `application/grpc`)
-      priority: 11
-      services:
-        - name: argocd-server
-          port: 80
-          scheme: h2c
+  rules:
+    - host: "argocd.brentdb.nl"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
   tls:
-    secretName: argocd-letsencrypt-tls
+    - hosts:
+      - "argocd.brentdb.nl"
+      secretName: argocd-letsencrypt-tls
