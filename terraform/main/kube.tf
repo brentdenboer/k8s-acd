@@ -105,12 +105,3 @@ output "kubeconfig" {
   value     = module.kube-hetzner.kubeconfig
   sensitive = true
 }
-
-resource "helm_release" "argocd" {
-  name             = "argocd"
-  repository       = "https://argoproj.github.io/argo-helm"
-  chart            = "argo-cd"
-  version          = "8.0.17"
-  namespace        = "argocd"
-  create_namespace = true
-}
