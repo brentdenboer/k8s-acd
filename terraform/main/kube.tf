@@ -71,8 +71,8 @@ module "kube-hetzner" {
 
   extra_kustomize_deployment_commands = <<-EOT
     echo "Waiting for ArgoCD CRDs to be established..."
-    kubectl -n argocd wait --for condition=established --timeout=180s crd/applications.argoproj.io
-    kubectl -n argocd wait --for condition=established --timeout=180s crd/appprojects.argoproj.io
+    kubectl -n argocd wait --for condition=established --timeout=180s crd/applications.argoproj.io --namespace argocd
+    kubectl -n argocd wait --for condition=established --timeout=180s crd/appprojects.argoproj.io --namespace argocd
     echo "ArgoCD CRDs are ready. Applying initial AppProject and App-of-Apps..."
     kubectl apply -f /var/user_kustomize/1-argocd-project.yaml
     kubectl apply -f /var/user_kustomize/2-argocd-app-of-apps.yaml
@@ -90,6 +90,10 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = ">= 1.51.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 2.17"
+    }
   }
 
   cloud {
@@ -104,4 +108,14 @@ terraform {
 output "kubeconfig" {
   value     = module.kube-hetzner.kubeconfig
   sensitive = true
+}
+
+
+resource "helm_release" "argocd" {
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  version          = "8.0.17"
+  namespace        = "argocd"
+  create_namespace = true
 }
