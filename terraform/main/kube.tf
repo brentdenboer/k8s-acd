@@ -6,11 +6,11 @@ module "kube-hetzner" {
 
   source = "kube-hetzner/kube-hetzner/hcloud"
 
-  ssh_public_key    = var.ssh_public_key
-  ssh_private_key   = var.ssh_private_key
-  hcloud_ssh_key_id = var.hcloud_ssh_key_id
+  ssh_public_key             = var.ssh_public_key
+  ssh_private_key            = var.ssh_private_key
+  hcloud_ssh_key_id          = var.hcloud_ssh_key_id
   ssh_additional_public_keys = [var.ssh_additional_public_keys]
-  ssh_port = var.ssh_port
+  ssh_port                   = var.ssh_port
 
   network_region = "eu-central"
 
@@ -21,7 +21,7 @@ module "kube-hetzner" {
       location    = "nbg1",
       labels      = [],
       taints      = [],
-      count       = 1
+      count       = 3
     },
   ]
 
@@ -32,7 +32,7 @@ module "kube-hetzner" {
       location    = "nbg1",
       labels      = [],
       taints      = [],
-      count       = 1
+      count       = 3
     },
   ]
 
@@ -40,10 +40,8 @@ module "kube-hetzner" {
   load_balancer_location = "nbg1"
 
   hetzner_ccm_use_helm           = true
-  automatically_upgrade_k3s      = false
-  system_upgrade_use_drain       = true
-  system_upgrade_enable_eviction = false
-  automatically_upgrade_os       = false
+  automatically_upgrade_k3s      = true
+  automatically_upgrade_os       = true
 
   cluster_name = "k8s-acd-main"
 
@@ -77,11 +75,11 @@ provider "hcloud" {
 }
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.12.1"
   required_providers {
     hcloud = {
       source  = "hetznercloud/hcloud"
-      version = ">= 1.49.1"
+      version = ">= 1.51.0"
     }
   }
 
@@ -97,4 +95,13 @@ terraform {
 output "kubeconfig" {
   value     = module.kube-hetzner.kubeconfig
   sensitive = true
+}
+
+resource "helm_release" "argocd" {
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  version          = "8.0.17"
+  namespace        = "argocd"
+  create_namespace = true
 }
