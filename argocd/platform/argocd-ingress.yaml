@@ -24,4 +24,6 @@ spec:
           port: 80
           scheme: h2c
   tls:
-    secretName: argocd-letsencrypt-tls
+    certResolver: letsencrypt-prod
+    domains:
+      - main: "argocd.brentdb.nl"
