@@ -4,7 +4,14 @@ terraform {
   cloud {
     organization = "brentdenboer" # Replace with your TFC organization
     workspaces {
-      name = "infra-live-main"
+      name = "k8s-acd"
+    }
+  }
+
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = ">= 1.51.0"
     }
   }
 }
@@ -25,7 +32,7 @@ module "hetzner-k8s-cluster" {
 
   control_plane_nodepools = var.control_plane_nodepools
   agent_nodepools         = var.agent_nodepools
-  
+
   providers = {
     hcloud = hcloud
   }
