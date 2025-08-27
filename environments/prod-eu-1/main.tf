@@ -1,30 +1,63 @@
-# Configure providers first
+terraform {
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = ">= 1.52.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.20.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 2.9.0"
+    }
+  }
+}
+
+# Configure providers
 provider "hcloud" {
   token = var.hcloud_token
 }
 
-# Provider for the management cluster
+# Provider for the management cluster (using kubeconfig from GitHub secrets)
 provider "kubernetes" {
-  config_path = "~/.kube/config" # Or use the ARGOCD_MANAGEMENT_KUBECONFIG
+  config_path = "~/.kube/config"
 }
 
-# Provider configurations for the new cluster
+# Provider for the new cluster - we'll configure this after the cluster is created
 provider "kubernetes" {
   alias = "new_cluster"
 
-  host                   = module.hetzner-k8s-cluster.kubeconfig.host
-  cluster_ca_certificate = base64decode(module.hetzner-k8s-cluster.kubeconfig.cluster_ca_certificate)
-  client_certificate     = base64decode(module.hetzner-k8s-cluster.kubeconfig.client_certificate)
-  client_key             = base64decode(module.hetzner-k8s-cluster.kubeconfig.client_key)
+  host                   = local.kubeconfig_parsed.host
+  cluster_ca_certificate = base64decode(local.kubeconfig_parsed.cluster_ca_certificate)
+  client_certificate     = base64decode(local.kubeconfig_parsed.client_certificate)
+  client_key             = base64decode(local.kubeconfig_parsed.client_key)
 }
 
 provider "helm" {
   alias = "new_cluster"
   kubernetes {
-    host                   = module.hetzner-k8s-cluster.kubeconfig.host
-    cluster_ca_certificate = base64decode(module.hetzner-k8s-cluster.kubeconfig.cluster_ca_certificate)
-    client_certificate     = base64decode(module.hetzner-k8s-cluster.kubeconfig.client_certificate)
-    client_key             = base64decode(module.hetzner-k8s-cluster.kubeconfig.client_key)
+    host                   = local.kubeconfig_parsed.host
+    cluster_ca_certificate = base64decode(local.kubeconfig_parsed.cluster_ca_certificate)
+    client_certificate     = base64decode(local.kubeconfig_parsed.client_certificate)
+    client_key             = base64decode(local.kubeconfig_parsed.client_key)
+  }
+}
+
+# Parse the kubeconfig from the cluster module
+locals {
+  kubeconfig_raw    = module.hetzner-k8s-cluster.kubeconfig
+  kubeconfig_parsed = yamldecode(local.kubeconfig_raw)
+
+  cluster_info = local.kubeconfig_parsed.clusters[0].cluster
+  user_info    = local.kubeconfig_parsed.users[0].user
+
+  kubeconfig_formatted = {
+    host                   = local.cluster_info.server
+    cluster_ca_certificate = local.cluster_info["certificate-authority-data"]
+    client_certificate     = local.user_info["client-certificate-data"]
+    client_key             = local.user_info["client-key-data"]
   }
 }
 
