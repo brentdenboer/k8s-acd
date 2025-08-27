@@ -15,6 +15,10 @@ module "kube-hetzner" {
   source  = "kube-hetzner/kube-hetzner/hcloud"
   version = "2.18.1" # Pinning to a specific version for stability
 
+  providers = {
+    hcloud = hcloud
+  }
+
   # --- Pass-through Variables ---
   hcloud_token = var.hcloud_token
   cluster_name = var.cluster_name

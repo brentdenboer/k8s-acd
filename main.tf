@@ -9,6 +9,10 @@ terraform {
   }
 }
 
+provider "hcloud" {
+  token = var.hcloud_token
+}
+
 # --- Module to Provision the Kubernetes Cluster ---
 module "hetzner-k8s-cluster" {
   source = "./modules/hetzner-k8s-cluster"
@@ -21,6 +25,10 @@ module "hetzner-k8s-cluster" {
 
   control_plane_nodepools = var.control_plane_nodepools
   agent_nodepools         = var.agent_nodepools
+  
+  providers = {
+    hcloud = hcloud
+  }
 }
 
 # --- Module to Bootstrap ArgoCD on the New Cluster ---
@@ -32,7 +40,4 @@ module "argocd-bootstrap" {
 
   gitops_repo_url = var.gitops_repo_url
   cluster_name    = var.cluster_name
-
-  # Ensure the cluster exists before trying to bootstrap it
-  depends_on = [module.hetzner-k8s-cluster]
 }
