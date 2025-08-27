@@ -1,0 +1,97 @@
+name: "Terraform Plan/Apply"
+
+on:
+  pull_request:
+    paths:
+      - "environments/**"
+      - "modules/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "environments/**"
+      - "modules/**"
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            environments:
+              - 'environments/**'
+
+  terraform:
+    name: "Terraform"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.environments!= ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+      fail-fast: false
+
+    environment:
+      name: ${{ contains(matrix.environment, 'prod') && 'production' || 'development' }}
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Kubeconfig for Management Cluster
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+        env:
+          ARGOCD_MANAGEMENT_KUBECONFIG: ${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Terraform Plan
+        id: plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color -out=tfplan
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: dflook/terraform-plan@v1
+        with:
+          path: ${{ matrix.environment }}
+          plan: tfplan
+          label: "${{ matrix.environment }}"
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}

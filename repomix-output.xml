@@ -1,0 +1,590 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    terraform.yaml
+environments/
+  prod-eu-1/
+    backend.tf
+    main.tf
+    variables.tf
+modules/
+  argocd-bootstrap/
+    main.tf
+    variables.tf
+  hetzner-k8s-cluster/
+    main.tf
+    outputs.tf
+    variables.tf
+.editorconfig
+.gitignore
+.prettierignore
+.prettierrc
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/workflows/terraform.yaml">
+name: "Terraform Plan/Apply"
+
+on:
+  pull_request:
+    paths:
+      - "environments/**"
+      - "modules/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "environments/**"
+      - "modules/**"
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            environments:
+              - 'environments/**'
+
+  terraform:
+    name: "Terraform"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.environments!= ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+      fail-fast: false
+
+    environment:
+      name: ${{ contains(matrix.environment, 'prod') && 'production' || 'development' }}
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Kubeconfig for Management Cluster
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+        env:
+          ARGOCD_MANAGEMENT_KUBECONFIG: ${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Terraform Plan
+        id: plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color -out=tfplan
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: dflook/terraform-plan@v1
+        with:
+          path: ${{ matrix.environment }}
+          plan: tfplan
+          label: "${{ matrix.environment }}"
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+</file>
+
+<file path="environments/prod-eu-1/backend.tf">
+# Example using Terraform Cloud backend for state management.
+# Replace with your preferred backend (e.g., S3).
+terraform {
+  cloud {
+    organization = "brentdenboer"
+
+    workspaces {
+      name = "infra-prod-eu-1"
+    }
+  }
+}
+</file>
+
+<file path="environments/prod-eu-1/main.tf">
+module "hetzner-k8s-cluster" {
+  source = "../../modules/hetzner-k8s-cluster"
+
+  hcloud_token = var.hcloud_token
+  cluster_name = "prod-eu-1"
+
+  ssh_public_key  = var.ssh_public_key
+  ssh_private_key = var.ssh_private_key
+
+  control_plane_nodepools = [{
+    name        = "cp",
+    server_type = "cax11",
+    location    = "nbg1",
+    count       = 3
+  }]
+  agent_nodepools = [{
+    name        = "agent",
+    server_type = "cax11",
+    location    = "nbg1",
+    count       = 3
+  }]
+}
+
+module "argocd-bootstrap" {
+  source = "../../modules/argocd-bootstrap"
+
+  is_management_cluster = true
+
+  kubeconfig_raw  = module.hetzner-k8s-cluster.kubeconfig
+  gitops_repo_url = "https://github.com/brentdenboer/gitops-config.git"
+  cluster_name    = "prod-eu-1"
+  environment     = "mgmt"
+  region          = "eu-1"
+}
+</file>
+
+<file path="environments/prod-eu-1/variables.tf">
+variable "hcloud_token" {
+  type      = string
+  sensitive = true
+}
+variable "ssh_public_key" {
+  type      = string
+  sensitive = true
+}
+variable "ssh_private_key" {
+  type      = string
+  sensitive = true
+}
+</file>
+
+<file path="modules/argocd-bootstrap/main.tf">
+terraform {
+  required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.20.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 2.9.0"
+    }
+  }
+}
+
+locals {
+  kubeconfig = yamldecode(var.kubeconfig_raw)
+}
+
+# Provider to interact with the NEWLY CREATED cluster
+provider "kubernetes" {
+  alias                  = "new_cluster"
+  host                   = local.kubeconfig.clusters.cluster.server
+  cluster_ca_certificate = base64decode(local.kubeconfig.clusters.cluster["certificate-authority-data"])
+  client_certificate     = base64decode(local.kubeconfig.users.user["client-certificate-data"])
+  client_key             = base64decode(local.kubeconfig.users.user["client-key-data"])
+}
+
+provider "helm" {
+  alias = "new_cluster"
+  kubernetes {
+    host                   = local.kubeconfig.clusters.cluster.server
+    cluster_ca_certificate = base64decode(local.kubeconfig.clusters.cluster["certificate-authority-data"])
+    client_certificate     = base64decode(local.kubeconfig.users.user["client-certificate-data"])
+    client_key             = base64decode(local.kubeconfig.users.user["client-key-data"])
+  }
+}
+
+# --- Step 1: Install ArgoCD ONLY on the management cluster ---
+# UPDATED: The 'count' meta-argument makes this resource conditional.
+resource "helm_release" "argocd" {
+  count = var.is_management_cluster ? 1 : 0
+
+  provider         = helm.new_cluster
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  namespace        = "argocd"
+  create_namespace = true
+  version          = "5.51.4"
+}
+
+# --- Step 2 & 3: Create Service Account and Token (for ALL clusters) ---
+# This logic is required for every cluster so the management cluster can connect to it.
+resource "kubernetes_service_account" "argocd_manager" {
+  provider = kubernetes.new_cluster
+  metadata {
+    name      = "argocd-manager"
+    namespace = "kube-system"
+  }
+}
+
+resource "kubernetes_cluster_role_binding" "argocd_manager_binding" {
+  provider = kubernetes.new_cluster
+  metadata {
+    name = "argocd-manager-admin-binding"
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = "cluster-admin"
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.argocd_manager.metadata.0.name
+    namespace = kubernetes_service_account.argocd_manager.metadata.0.namespace
+  }
+}
+
+resource "kubernetes_secret" "argocd_manager_token" {
+  provider = kubernetes.new_cluster
+  metadata {
+    name      = "argocd-manager-token"
+    namespace = "kube-system"
+    annotations = {
+      "kubernetes.io/service-account.name" = kubernetes_service_account.argocd_manager.metadata.0.name
+    }
+  }
+  type = "kubernetes.io/service-account-token"
+}
+
+# --- Step 4: Create the ArgoCD Cluster Secret on the management cluster ---
+# This resource ALWAYS runs, creating a secret on the management cluster
+# that points to the newly created cluster (which could be itself or a workload cluster).
+resource "kubernetes_secret" "argocd_cluster_secret" {
+  provider = kubernetes # Uses the default provider, authenticated to the management cluster
+  metadata {
+    name      = "cluster-${var.cluster_name}"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "cluster"
+      "environment"                    = var.environment
+      "region"                         = var.region
+      "cloud"                          = "hetzner"
+      "type"                           = "workload"
+    }
+  }
+  data = {
+    "name"   = var.cluster_name
+    "server" = local.kubeconfig.clusters.cluster.server
+    "config" = jsonencode({
+      "bearerToken" = kubernetes_secret.argocd_manager_token.data.token
+      "tlsClientConfig" = {
+        "insecure" = false
+        "caData"   = local.kubeconfig.clusters.cluster["certificate-authority-data"]
+      }
+    })
+  }
+}
+
+# --- Step 5: Deploy the root Application ONLY on the management cluster ---
+# UPDATED: This is also now conditional.
+resource "kubernetes_manifest" "root_app" {
+  count = var.is_management_cluster ? 1 : 0
+
+  provider = kubernetes.new_cluster
+  manifest = {
+    "apiVersion" = "argoproj.io/v1alpha1"
+    "kind"       = "Application"
+    "metadata" = {
+      "name"      = "root"
+      "namespace" = "argocd"
+    }
+    "spec" = {
+      "project" = "default"
+      "source" = {
+        "repoURL"        = var.gitops_repo_url
+        "targetRevision" = "HEAD"
+        "path"           = "bootstrap"
+      }
+      "destination" = {
+        "server"    = "https://kubernetes.default.svc"
+        "namespace" = "argocd"
+      }
+      "syncPolicy" = { "automated" = { "prune" = true, "selfHeal" = true } }
+    }
+  }
+  depends_on = [helm_release.argocd]
+}
+</file>
+
+<file path="modules/argocd-bootstrap/variables.tf">
+variable "is_management_cluster" {
+  description = "If true, this cluster will be designated as the management cluster and have ArgoCD installed on it."
+  type        = bool
+  default     = false
+}
+
+variable "kubeconfig_raw" {
+  description = "The raw kubeconfig string of the newly created cluster."
+  type        = string
+  sensitive   = true
+}
+
+variable "gitops_repo_url" {
+  description = "The URL of the gitops-config repository."
+  type        = string
+}
+
+variable "cluster_name" {
+  description = "The name of the cluster being bootstrapped."
+  type        = string
+}
+
+variable "environment" {
+  description = "The environment of the cluster (e.g., 'dev', 'prod')."
+  type        = string
+}
+
+variable "region" {
+  description = "The region of the cluster (e.g., 'eu-1', 'us-1')."
+  type        = string
+}
+</file>
+
+<file path="modules/hetzner-k8s-cluster/main.tf">
+terraform {
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = ">= 1.52.0"
+    }
+  }
+}
+
+module "kube-hetzner" {
+  source  = "kube-hetzner/kube-hetzner/hcloud"
+  version = "2.18.1"
+
+  hcloud_token = var.hcloud_token
+  cluster_name = var.cluster_name
+
+  ssh_public_key  = var.ssh_public_key
+  ssh_private_key = var.ssh_private_key
+
+  control_plane_nodepools = var.control_plane_nodepools
+  agent_nodepools         = var.agent_nodepools
+
+  network_region            = "eu-central"
+  load_balancer_type        = "lb11"
+  load_balancer_location    = "nbg1"
+  automatically_upgrade_k3s = true
+  automatically_upgrade_os  = true
+}
+</file>
+
+<file path="modules/hetzner-k8s-cluster/outputs.tf">
+output "kubeconfig" {
+  description = "Kubeconfig file content for the cluster."
+  value       = module.kube-hetzner.kubeconfig
+  sensitive   = true
+}
+</file>
+
+<file path="modules/hetzner-k8s-cluster/variables.tf">
+variable "hcloud_token" {
+  description = "Hetzner Cloud API token."
+  type        = string
+  sensitive   = true
+}
+
+variable "cluster_name" {
+  description = "The name of the Kubernetes cluster."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9\\-]+$", var.cluster_name))
+    error_message = "The cluster name must be in the form of lowercase alphanumeric characters and/or dashes."
+  }
+}
+
+variable "ssh_public_key" {
+  description = "The content of the SSH public key for node access."
+  type        = string
+}
+
+variable "ssh_private_key" {
+  description = "The content of the SSH private key for node access."
+  type        = string
+  sensitive   = true
+}
+
+variable "control_plane_nodepools" {
+  description = "A list of objects defining the control plane node pools."
+  type = list(object({
+    name        = string
+    server_type = string
+    location    = string
+    labels      = list(string)
+    taints      = list(string)
+    count       = number
+  }))
+  default = []
+  validation {
+    condition = length(
+      [for control_plane_nodepool in var.control_plane_nodepools : control_plane_nodepool.name]
+      ) == length(
+      distinct(
+        [for control_plane_nodepool in var.control_plane_nodepools : control_plane_nodepool.name]
+      )
+    )
+    error_message = "Names in control_plane_nodepools must be unique."
+  }
+}
+
+variable "agent_nodepools" {
+  description = "A list of objects defining the agent node pools."
+  type = list(object({
+    name        = string
+    server_type = string
+    location    = string
+    labels      = list(string)
+    taints      = list(string)
+    count       = optional(number, null)
+  }))
+  default = []
+
+  validation {
+    condition = length(
+      [for agent_nodepool in var.agent_nodepools : agent_nodepool.name]
+      ) == length(
+      distinct(
+        [for agent_nodepool in var.agent_nodepools : agent_nodepool.name]
+      )
+    )
+    error_message = "Names in agent_nodepools must be unique."
+  }
+}
+</file>
+
+<file path=".prettierignore">
+# Ignore artifacts:
+build
+coverage
+</file>
+
+<file path=".prettierrc">
+{}
+</file>
+
+<file path=".editorconfig">
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+</file>
+
+<file path=".gitignore">
+# Local .terraform directories
+.terraform/
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files, which are likely to contain sensitive data, such as
+# password, private keys, and other secrets. These should not be part of version
+# control as they are data points which are potentially sensitive and subject
+# to change depending on the environment.
+*.tfvars
+*.tfvars.json
+
+# Ignore override files as they are usually used to override resources locally and so
+# are not checked in
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Obsidian
+.obsidian
+</file>
+
+</files>
