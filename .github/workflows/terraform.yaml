@@ -11,6 +11,7 @@ on:
     paths:
       - "environments/**"
       - "modules/**"
+  workflow_dispatch:
 
 jobs:
   detect-changes:
