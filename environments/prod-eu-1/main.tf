@@ -29,19 +29,19 @@ provider "kubernetes" {
 provider "kubernetes" {
   alias = "new_cluster"
 
-  host                   = local.kubeconfig_parsed.host
-  cluster_ca_certificate = base64decode(local.kubeconfig_parsed.cluster_ca_certificate)
-  client_certificate     = base64decode(local.kubeconfig_parsed.client_certificate)
-  client_key             = base64decode(local.kubeconfig_parsed.client_key)
+  host                   = local.kubeconfig_formatted.host
+  cluster_ca_certificate = base64decode(local.kubeconfig_formatted.cluster_ca_certificate)
+  client_certificate     = base64decode(local.kubeconfig_formatted.client_certificate)
+  client_key             = base64decode(local.kubeconfig_formatted.client_key)
 }
 
 provider "helm" {
   alias = "new_cluster"
   kubernetes {
-    host                   = local.kubeconfig_parsed.host
-    cluster_ca_certificate = base64decode(local.kubeconfig_parsed.cluster_ca_certificate)
-    client_certificate     = base64decode(local.kubeconfig_parsed.client_certificate)
-    client_key             = base64decode(local.kubeconfig_parsed.client_key)
+    host                   = local.kubeconfig_formatted.host
+    cluster_ca_certificate = base64decode(local.kubeconfig_formatted.cluster_ca_certificate)
+    client_certificate     = base64decode(local.kubeconfig_formatted.client_certificate)
+    client_key             = base64decode(local.kubeconfig_formatted.client_key)
   }
 }
 
@@ -63,6 +63,11 @@ locals {
 
 module "hetzner-k8s-cluster" {
   source = "../../modules/hetzner-k8s-cluster"
+
+  # IMPORTANT: Pass the hcloud provider explicitly
+  providers = {
+    hcloud = hcloud
+  }
 
   hcloud_token = var.hcloud_token
   cluster_name = "prod-eu-1"
