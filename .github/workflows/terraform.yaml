@@ -12,10 +12,18 @@ on:
       - "environments/**"
       - "modules/**"
   workflow_dispatch:
+    inputs:
+      environments:
+        description: 'Environments to deploy (comma-separated, e.g., "prod-eu-1,dev-eu-1" or "all")'
+        required: true
+        default: "all"
+        type: string
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    # Skip this job on workflow_dispatch
+    if: github.event_name != 'workflow_dispatch'
     outputs:
       environments: ${{ steps.filter.outputs.changes }}
       has-changes: ${{ steps.filter.outputs.changes != '[]' && steps.filter.outputs.changes != '' }}
@@ -25,7 +33,7 @@ jobs:
         id: filter
         with:
           list-files: none
-          base: HEAD # This helps with the 'before' field missing warning
+          base: HEAD
           filters: |
             prod-eu-1:
               - 'environments/prod-eu-1/**'
@@ -34,10 +42,38 @@ jobs:
             staging-eu-1:
               - 'environments/staging-eu-1/**'
 
+  prepare-environments:
+    runs-on: ubuntu-latest
+    # Only run on workflow_dispatch
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      environments: ${{ steps.parse.outputs.environments }}
+      has-changes: "true"
+    steps:
+      - name: Parse environment input
+        id: parse
+        run: |
+          input="${{ github.event.inputs.environments }}"
+          if [ "$input" = "all" ]; then
+            # List all available environments
+            environments='["prod-eu-1","dev-eu-1","staging-eu-1"]'
+          else
+            # Convert comma-separated string to JSON array
+            environments=$(echo "$input" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+          fi
+          echo "environments=$environments" >> $GITHUB_OUTPUT
+          echo "Selected environments: $environments"
+
   terraform:
     name: "Terraform"
-    needs: detect-changes
-    if: needs.detect-changes.outputs.has-changes == 'true'
+    needs: [detect-changes, prepare-environments]
+    # Run if either job has changes/environments, but skip if both are skipped
+    if: |
+      always() && (
+        (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.has-changes == 'true') ||
+        (needs.prepare-environments.result == 'success' && needs.prepare-environments.outputs.has-changes == 'true') ||
+        (needs.detect-changes.result == 'skipped' && needs.prepare-environments.result == 'success')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,7 +81,7 @@ jobs:
 
     strategy:
       matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments || needs.prepare-environments.outputs.environments) }}
       fail-fast: false
 
     environment:
@@ -140,9 +176,9 @@ jobs:
               body: output
             })
 
-      - name: Terraform Plan (Push)
+      - name: Terraform Plan (Push/Manual)
         id: plan_push
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: terraform plan -no-color -out=tfplan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
@@ -150,7 +186,7 @@ jobs:
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: terraform apply -auto-approve tfplan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
@@ -158,7 +194,7 @@ jobs:
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Terraform Output
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: |
           echo "::notice::Cluster ${{ matrix.environment }} successfully deployed"
           terraform output -no-color
