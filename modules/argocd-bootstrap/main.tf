@@ -3,10 +3,13 @@ terraform {
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = ">= 2.20.0"
+      # Use configuration_aliases instead of explicit providers
+      configuration_aliases = [kubernetes.new_cluster]
     }
     helm = {
-      source  = "hashicorp/helm"
-      version = ">= 2.9.0"
+      source                = "hashicorp/helm"
+      version               = ">= 2.9.0"
+      configuration_aliases = [helm.new_cluster]
     }
   }
 }
@@ -51,26 +54,6 @@ locals {
   )
 }
 
-# Provider to interact with the NEWLY CREATED cluster
-provider "kubernetes" {
-  alias = "new_cluster"
-
-  host                   = local.cluster_server
-  cluster_ca_certificate = local.cluster_ca_data != "" ? base64decode(local.cluster_ca_data) : null
-  client_certificate     = local.client_cert_data != "" ? base64decode(local.client_cert_data) : null
-  client_key             = local.client_key_data != "" ? base64decode(local.client_key_data) : null
-}
-
-provider "helm" {
-  alias = "new_cluster"
-  kubernetes {
-    host                   = local.cluster_server
-    cluster_ca_certificate = local.cluster_ca_data != "" ? base64decode(local.cluster_ca_data) : null
-    client_certificate     = local.client_cert_data != "" ? base64decode(local.client_cert_data) : null
-    client_key             = local.client_key_data != "" ? base64decode(local.client_key_data) : null
-  }
-}
-
 # --- Step 1: Install ArgoCD ONLY on the management cluster ---
 resource "helm_release" "argocd" {
   count = var.is_management_cluster ? 1 : 0
@@ -81,7 +64,7 @@ resource "helm_release" "argocd" {
   chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
-  version          = "7.6.12" # Updated to a more recent version
+  version          = "7.6.12"
 
   # Basic ArgoCD configuration optimized for GitOps
   values = [
@@ -96,13 +79,13 @@ resource "helm_release" "argocd" {
       }
       configs = {
         params = {
-          "server.insecure" = true # For initial setup - should be changed in production
+          "server.insecure" = true
         }
       }
     })
   ]
 
-  timeout = 600 # 10 minutes timeout for installation
+  timeout = 600
 }
 
 # --- Step 2 & 3: Create Service Account and Token (for ALL clusters) ---
@@ -160,13 +143,12 @@ resource "kubernetes_secret" "argocd_manager_token" {
 
   type = "kubernetes.io/service-account-token"
 
-  # Wait for the service account to be fully created
   depends_on = [kubernetes_service_account.argocd_manager]
 }
 
 # --- Step 4: Create the ArgoCD Cluster Secret on the management cluster ---
 resource "kubernetes_secret" "argocd_cluster_secret" {
-  provider = kubernetes # Uses the default provider, authenticated to the management cluster
+  # Uses the default provider (management cluster)
 
   metadata {
     name      = "cluster-${var.cluster_name}"

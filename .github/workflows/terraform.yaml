@@ -25,6 +25,7 @@ jobs:
         id: filter
         with:
           list-files: none
+          base: HEAD # This helps with the 'before' field missing warning
           filters: |
             prod-eu-1:
               - 'environments/prod-eu-1/**'

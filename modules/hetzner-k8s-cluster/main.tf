@@ -7,6 +7,10 @@ terraform {
   }
 }
 
+provider "hcloud" {
+  token = var.hcloud_token
+}
+
 module "kube-hetzner" {
   source  = "kube-hetzner/kube-hetzner/hcloud"
   version = "2.18.1"
