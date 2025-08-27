@@ -19,17 +19,21 @@ jobs:
       environments: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
-            environments:
-              - 'environments/**'
+            prod-eu-1:
+              - 'environments/prod-eu-1/**'
+            dev-eu-1:
+              - 'environments/dev-eu-1/**'
+            staging-eu-1:
+              - 'environments/staging-eu-1/**'
 
   terraform:
     name: "Terraform"
     needs: detect-changes
-    if: needs.detect-changes.outputs.environments!= ''
+    if: needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,7 +41,7 @@ jobs:
 
     strategy:
       matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+        environment: ${{ fromJson(needs.detect-changes.outputs.changes) }}
       fail-fast: false
 
     environment:
@@ -46,7 +50,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ matrix.environment }}
+        working-directory: environments/${{ matrix.environment }}
 
     steps:
       - name: Checkout
@@ -62,6 +66,13 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9.0"
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
 
       - name: Terraform Init
         id: init
@@ -71,22 +82,68 @@ jobs:
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Terraform Plan
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan (PR)
         id: plan
         if: github.event_name == 'pull_request'
+        run: |
+          terraform plan -no-color -out=tfplan
+          terraform show -no-color tfplan
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+        continue-on-error: true
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN: "${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            <details><summary>Validation Output</summary>
+
+            \`\`\`\n
+            ${{ steps.validate.outputs.stdout }}
+            \`\`\`
+
+            </details>
+
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`\n
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Environment: \`${{ matrix.environment }}\`, Workflow: \`${{ github.workflow }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan (Push)
+        id: plan_push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform plan -no-color -out=tfplan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Post Plan to PR
-        if: github.event_name == 'pull_request'
-        uses: dflook/terraform-plan@v1
-        with:
-          path: ${{ matrix.environment }}
-          plan: tfplan
-          label: "${{ matrix.environment }}"
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -95,3 +152,9 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Terraform Output
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "::notice::Cluster ${{ matrix.environment }} successfully deployed"
+          terraform output -no-color

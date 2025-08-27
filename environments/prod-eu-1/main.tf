@@ -8,17 +8,20 @@ module "hetzner-k8s-cluster" {
   ssh_private_key = var.ssh_private_key
 
   control_plane_nodepools = [{
-    name        = "cp",
-    server_type = "cax11",
-    location    = "nbg1",
-    count       = 3,
-    labels      = [],
+    name        = "cp"
+    server_type = "cax11"
+    location    = "nbg1"
+    labels      = []
     taints      = []
+    count       = 3
   }]
+
   agent_nodepools = [{
-    name        = "agent",
-    server_type = "cax11",
-    location    = "nbg1",
+    name        = "agent"
+    server_type = "cax11"
+    location    = "nbg1"
+    labels      = []
+    taints      = []
     count       = 3
   }]
 }
@@ -31,6 +34,8 @@ module "argocd-bootstrap" {
   kubeconfig_raw  = module.hetzner-k8s-cluster.kubeconfig
   gitops_repo_url = "https://github.com/brentdenboer/gitops-config.git"
   cluster_name    = "prod-eu-1"
-  environment     = "mgmt"
+  environment     = "production"
   region          = "eu-1"
+
+  depends_on = [module.hetzner-k8s-cluster]
 }

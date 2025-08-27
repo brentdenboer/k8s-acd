@@ -1,12 +1,17 @@
 variable "hcloud_token" {
-  type      = string
-  sensitive = true
+  description = "Hetzner Cloud API token"
+  type        = string
+  sensitive   = true
 }
+
 variable "ssh_public_key" {
-  type      = string
-  sensitive = true
+  description = "SSH public key for cluster node access"
+  type        = string
+  sensitive   = true
 }
+
 variable "ssh_private_key" {
-  type      = string
-  sensitive = true
+  description = "SSH private key for cluster node access"
+  type        = string
+  sensitive   = true
 }
