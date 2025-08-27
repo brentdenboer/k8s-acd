@@ -17,11 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.filter.outputs.changes }}
+      has-changes: ${{ steps.filter.outputs.changes != '[]' && steps.filter.outputs.changes != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          list-files: none
           filters: |
             prod-eu-1:
               - 'environments/prod-eu-1/**'
@@ -33,7 +35,7 @@ jobs:
   terraform:
     name: "Terraform"
     needs: detect-changes
-    if: needs.detect-changes.outputs.changes != '[]'
+    if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,7 +43,7 @@ jobs:
 
     strategy:
       matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.changes) }}
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
       fail-fast: false
 
     environment:
