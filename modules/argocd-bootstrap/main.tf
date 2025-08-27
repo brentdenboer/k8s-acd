@@ -3,84 +3,62 @@ terraform {
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = ">= 2.20.0"
-      # Use configuration_aliases instead of explicit providers
-      configuration_aliases = [kubernetes.new_cluster]
     }
     helm = {
-      source                = "hashicorp/helm"
-      version               = ">= 2.9.0"
-      configuration_aliases = [helm.new_cluster]
+      source  = "hashicorp/helm"
+      version = ">= 2.9.0"
     }
   }
 }
 
+# --- Provider Configuration ---
+# This section configures the providers to interact with the
+# Kubernetes cluster that was just created by the hetzner-k8s-cluster module.
+
 locals {
-  # Defensive kubeconfig parsing with better error handling
-  kubeconfig_raw = var.kubeconfig_raw
-  kubeconfig     = yamldecode(local.kubeconfig_raw)
-
-  # Extract cluster info with error handling for different kubeconfig formats
-  cluster_info = try(
-    local.kubeconfig.clusters[0].cluster,
-    local.kubeconfig.clusters.cluster,
-    null
-  )
-
-  user_info = try(
-    local.kubeconfig.users[0].user,
-    local.kubeconfig.users.user,
-    null
-  )
-
-  # Validate that we have the required fields
-  cluster_server = try(
-    local.cluster_info.server,
-    ""
-  )
-
-  cluster_ca_data = try(
-    local.cluster_info["certificate-authority-data"],
-    ""
-  )
-
-  client_cert_data = try(
-    local.user_info["client-certificate-data"],
-    ""
-  )
-
-  client_key_data = try(
-    local.user_info["client-key-data"],
-    ""
-  )
+  kubeconfig = yamldecode(var.kubeconfig_raw)
+  cluster    = local.kubeconfig.clusters[0].cluster
+  user       = local.kubeconfig.users[0].user
 }
 
-# --- Step 1: Install ArgoCD ONLY on the management cluster ---
-resource "helm_release" "argocd" {
-  count = var.is_management_cluster ? 1 : 0
+provider "kubernetes" {
+  host = local.cluster.server
+  cluster_ca_certificate = base64decode(
+    local.cluster["certificate-authority-data"]
+  )
+  client_certificate = base64decode(local.user["client-certificate-data"])
+  client_key         = base64decode(local.user["client-key-data"])
+}
 
-  provider         = helm.new_cluster
+provider "helm" {
+  kubernetes {
+    host = local.cluster.server
+    cluster_ca_certificate = base64decode(
+      local.cluster["certificate-authority-data"]
+    )
+    client_certificate = base64decode(local.user["client-certificate-data"])
+    client_key         = base64decode(local.user["client-key-data"])
+  }
+}
+
+# --- Step 1: Install ArgoCD ---
+resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
-  version          = "7.6.12"
+  version          = "8.3.1"
 
-  # Basic ArgoCD configuration optimized for GitOps
   values = [
     yamlencode({
       server = {
         service = {
           type = "LoadBalancer"
         }
-        config = {
-          url = "https://argocd.${var.cluster_name}.local"
-        }
-      }
-      configs = {
-        params = {
-          "server.insecure" = true
-        }
+        # This makes it easier to access the UI initially.
+        # For production, you would configure proper ingress and TLS.
+        extraArgs = ["--insecure"]
       }
     })
   ]
@@ -88,111 +66,15 @@ resource "helm_release" "argocd" {
   timeout = 600
 }
 
-# --- Step 2 & 3: Create Service Account and Token (for ALL clusters) ---
-resource "kubernetes_service_account" "argocd_manager" {
-  provider = kubernetes.new_cluster
-
-  metadata {
-    name      = "argocd-manager"
-    namespace = "kube-system"
-    labels = {
-      "managed-by" = "terraform"
-      "cluster"    = var.cluster_name
-    }
-  }
-}
-
-resource "kubernetes_cluster_role_binding" "argocd_manager_binding" {
-  provider = kubernetes.new_cluster
-
-  metadata {
-    name = "argocd-manager-admin-binding"
-    labels = {
-      "managed-by" = "terraform"
-      "cluster"    = var.cluster_name
-    }
-  }
-
-  role_ref {
-    api_group = "rbac.authorization.k8s.io"
-    kind      = "ClusterRole"
-    name      = "cluster-admin"
-  }
-
-  subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account.argocd_manager.metadata[0].name
-    namespace = kubernetes_service_account.argocd_manager.metadata[0].namespace
-  }
-}
-
-resource "kubernetes_secret" "argocd_manager_token" {
-  provider = kubernetes.new_cluster
-
-  metadata {
-    name      = "argocd-manager-token"
-    namespace = "kube-system"
-    annotations = {
-      "kubernetes.io/service-account.name" = kubernetes_service_account.argocd_manager.metadata[0].name
-    }
-    labels = {
-      "managed-by" = "terraform"
-      "cluster"    = var.cluster_name
-    }
-  }
-
-  type = "kubernetes.io/service-account-token"
-
-  depends_on = [kubernetes_service_account.argocd_manager]
-}
-
-# --- Step 4: Create the ArgoCD Cluster Secret on the management cluster ---
-resource "kubernetes_secret" "argocd_cluster_secret" {
-  # Uses the default provider (management cluster)
-
-  metadata {
-    name      = "cluster-${var.cluster_name}"
-    namespace = "argocd"
-    labels = {
-      "argocd.argoproj.io/secret-type" = "cluster"
-      "environment"                    = var.environment
-      "region"                         = var.region
-      "cloud"                          = "hetzner"
-      "type"                           = var.is_management_cluster ? "management" : "workload"
-      "managed-by"                     = "terraform"
-    }
-  }
-
-  data = {
-    "name"   = var.cluster_name
-    "server" = local.cluster_server
-    "config" = jsonencode({
-      "bearerToken" = kubernetes_secret.argocd_manager_token.data["token"]
-      "tlsClientConfig" = {
-        "insecure" = false
-        "caData"   = local.cluster_ca_data
-      }
-    })
-  }
-
-  depends_on = [kubernetes_secret.argocd_manager_token]
-}
-
-# --- Step 5: Deploy the root Application ONLY on the management cluster ---
+# --- Step 2: Deploy the Root Application ---
+# This Application tells ArgoCD to manage itself by syncing with your gitops-config repo.
 resource "kubernetes_manifest" "root_app" {
-  count = var.is_management_cluster ? 1 : 0
-
-  provider = kubernetes.new_cluster
-
   manifest = {
     "apiVersion" = "argoproj.io/v1alpha1"
     "kind"       = "Application"
     "metadata" = {
-      "name"      = "root"
-      "namespace" = "argocd"
-      "labels" = {
-        "managed-by" = "terraform"
-      }
+      "name"       = "root"
+      "namespace"  = "argocd"
       "finalizers" = ["resources-finalizer.argocd.argoproj.io"]
     }
     "spec" = {
@@ -200,7 +82,7 @@ resource "kubernetes_manifest" "root_app" {
       "source" = {
         "repoURL"        = var.gitops_repo_url
         "targetRevision" = "HEAD"
-        "path"           = "bootstrap"
+        "path"           = "bootstrap" # Assumes your root app-of-apps is in this path
       }
       "destination" = {
         "server"    = "https://kubernetes.default.svc"
@@ -219,10 +101,4 @@ resource "kubernetes_manifest" "root_app" {
   }
 
   depends_on = [helm_release.argocd]
-
-  timeouts {
-    create = "5m"
-    update = "5m"
-    delete = "5m"
-  }
 }

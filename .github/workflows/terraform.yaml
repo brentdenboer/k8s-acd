@@ -2,124 +2,45 @@ name: "Terraform Plan/Apply"
 
 on:
   pull_request:
+    # Run on changes to any Terraform file
     paths:
-      - "environments/**"
-      - "modules/**"
+      - "**.tf"
   push:
     branches:
       - main
     paths:
-      - "environments/**"
-      - "modules/**"
+      - "**.tf"
   workflow_dispatch:
-    inputs:
-      environments:
-        description: 'Environments to deploy (comma-separated, e.g., "prod-eu-1,dev-eu-1" or "all")'
-        required: true
-        default: "all"
-        type: string
 
 jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    # Skip this job on workflow_dispatch
-    if: github.event_name != 'workflow_dispatch'
-    outputs:
-      environments: ${{ steps.filter.outputs.changes }}
-      has-changes: ${{ steps.filter.outputs.changes != '[]' && steps.filter.outputs.changes != '' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          list-files: none
-          base: HEAD
-          filters: |
-            prod-eu-1:
-              - 'environments/prod-eu-1/**'
-            dev-eu-1:
-              - 'environments/dev-eu-1/**'
-            staging-eu-1:
-              - 'environments/staging-eu-1/**'
-
-  prepare-environments:
-    runs-on: ubuntu-latest
-    # Only run on workflow_dispatch
-    if: github.event_name == 'workflow_dispatch'
-    outputs:
-      environments: ${{ steps.parse.outputs.environments }}
-      has-changes: "true"
-    steps:
-      - name: Parse environment input
-        id: parse
-        run: |
-          input="${{ github.event.inputs.environments }}"
-          if [ "$input" = "all" ]; then
-            # List all available environments
-            environments='["prod-eu-1","dev-eu-1","staging-eu-1"]'
-          else
-            # Convert comma-separated string to JSON array
-            environments=$(echo "$input" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
-          fi
-          echo "environments=$environments" >> $GITHUB_OUTPUT
-          echo "Selected environments: $environments"
-
   terraform:
     name: "Terraform"
-    needs: [detect-changes, prepare-environments]
-    # Run if either job has changes/environments, but skip if both are skipped
-    if: |
-      always() && (
-        (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.has-changes == 'true') ||
-        (needs.prepare-environments.result == 'success' && needs.prepare-environments.outputs.has-changes == 'true') ||
-        (needs.detect-changes.result == 'skipped' && needs.prepare-environments.result == 'success')
-      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
 
-    strategy:
-      matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.environments || needs.prepare-environments.outputs.environments) }}
-      fail-fast: false
-
+    # Use a single 'production' environment for manual approvals on main branch
     environment:
-      name: ${{ contains(matrix.environment, 'prod') && 'production' || 'development' }}
+      name: production
 
     defaults:
       run:
         shell: bash
-        working-directory: environments/${{ matrix.environment }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Kubeconfig for Management Cluster
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-        env:
-          ARGOCD_MANAGEMENT_KUBECONFIG: ${{ secrets.ARGOCD_MANAGEMENT_KUBECONFIG }}
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.9.0"
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check
-        continue-on-error: true
 
       - name: Terraform Init
         id: init
         run: terraform init
         env:
-          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -128,18 +49,14 @@ jobs:
         id: validate
         run: terraform validate -no-color
 
-      - name: Terraform Plan (PR)
+      - name: Terraform Plan
         id: plan
-        if: github.event_name == 'pull_request'
-        run: |
-          terraform plan -no-color -out=tfplan
-          terraform show -no-color tfplan
+        run: terraform plan -no-color -out=tfplan
         env:
-          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-        continue-on-error: true
+        continue-on-error: true # Continue so we can post the plan comment even if it fails
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
@@ -149,8 +66,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
             <details><summary>Validation Output</summary>
 
@@ -170,7 +86,7 @@ jobs:
 
             </details>
 
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Environment: \`${{ matrix.environment }}\`, Workflow: \`${{ github.workflow }}\`*`;
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -179,27 +95,11 @@ jobs:
               body: output
             })
 
-      - name: Terraform Plan (Push/Manual)
-        id: plan_push
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: terraform plan -no-color -out=tfplan
-        env:
-          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-          TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-
       - name: Terraform Apply
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        # Only apply on a push to the main branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve tfplan
         env:
-          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Terraform Output
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-        run: |
-          echo "::notice::Cluster ${{ matrix.environment }} successfully deployed"
-          terraform output -no-color
